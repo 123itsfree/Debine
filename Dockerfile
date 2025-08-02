@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install dependencies for QEMU, noVNC, SSH, and cloud-init
 RUN apt-get update && apt-get install -y --no-install-recommends \
     qemu-system-x86 \
-    qemu-system-gui \  # Added for GUI support
+    qemu-system-gui \
     qemu-utils \
     cloud-image-utils \
     genisoimage \
