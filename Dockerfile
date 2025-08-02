@@ -13,11 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     unzip \
     openssh-client \
+    openssh-server \
     net-tools \
     netcat-openbsd \
     sudo \
     bash \
     dos2unix \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Create required directories
@@ -55,12 +57,8 @@ PORT_VNC=6080
 USERNAME="root"
 PASSWORD="root"
 
-# Check if script is executable and has correct format
-if ! [ -x "/start.sh" ]; then
-    echo "Error: /start.sh is not executable"
-    chmod +x /start.sh
-fi
-file /start.sh
+# Ensure script is executable
+chmod +x /start.sh
 
 # Check if KVM is available
 if [ -e /dev/kvm ]; then
@@ -86,21 +84,24 @@ if [ ! -f "$IMG" ] || [ ! -f "$SEED" ]; then
     exit 1
 fi
 
-# Start QEMU
+# Start SSH server in container
+mkdir -p /var/run/sshd
+/usr/sbin/sshd
+
+# Start noVNC
+websockify --web=/novnc ${PORT_VNC} localhost:5900 &
+
+# Start QEMU in foreground
 qemu-system-x86_64 \
     $KVM \
     -smp 2 \
-    -m 6144 \
+    -m 2048 \
     -drive file="$DISK",format=raw,if=virtio \
     -drive file="$SEED",format=raw,if=virtio \
     -netdev user,id=net0,hostfwd=tcp::${PORT_SSH}-:22 \
     -device virtio-net,netdev=net0 \
     -vga virtio \
-    -display vnc=:0 \
-    -daemonize || { echo "Failed to start QEMU"; exit 1; }
-
-# Start noVNC
-websockify --web=/novnc ${PORT_VNC} localhost:5900 &
+    -display vnc=:0 &
 
 # Wait for SSH to be available
 for i in {1..30}; do
@@ -120,8 +121,7 @@ wait
 EOF
 
 # Ensure Unix line endings and make executable
-RUN dos2unix /start.sh && chmod +x /start.sh && \
-    /bin/bash -n /start.sh
+RUN dos2unix /start.sh && chmod +x /start.sh && /bin/bash -n /start.sh
 
 # Expose ports
 EXPOSE 6080 2221
