@@ -55,6 +55,13 @@ PORT_VNC=6080
 USERNAME="root"
 PASSWORD="root"
 
+# Check if script is executable and has correct format
+if ! [ -x "/start.sh" ]; then
+    echo "Error: /start.sh is not executable"
+    chmod +x /start.sh
+fi
+file /start.sh
+
 # Check if KVM is available
 if [ -e /dev/kvm ]; then
     KVM="--enable-kvm -cpu host"
@@ -113,7 +120,8 @@ wait
 EOF
 
 # Ensure Unix line endings and make executable
-RUN dos2unix /start.sh && chmod +x /start.sh
+RUN dos2unix /start.sh && chmod +x /start.sh && \
+    /bin/bash -n /start.sh
 
 # Expose ports
 EXPOSE 6080 2221
@@ -121,5 +129,5 @@ EXPOSE 6080 2221
 # Mount volume for VM disk
 VOLUME /data
 
-# Start the system
-CMD ["/start.sh"]
+# Start the system with explicit Bash invocation
+CMD ["/bin/bash", "/start.sh"]
