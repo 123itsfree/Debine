@@ -41,7 +41,7 @@ RUN curl -L https://github.com/novnc/noVNC/archive/refs/tags/v1.3.0.zip -o /tmp/
     mv /tmp/noVNC-1.3.0/* /novnc && \
     rm -rf /tmp/novnc.zip /tmp/noVNC-1.3.0
 
-# Create start.sh script
+# Create start.sh script with correct UNIX line endings
 RUN cat <<'EOF' > /start.sh
 #!/bin/bash
 set -e
@@ -93,13 +93,16 @@ done
 wait
 EOF
 
+# Fix line endings forcibly to UNIX style (just in case)
+RUN sed -i 's/\r$//' /start.sh
+
 RUN chmod +x /start.sh
 
-# Expose ports for VNC and SSH forwarding
+# Expose ports
 EXPOSE 6080 2221
 
-# Data volume for VM disk persistence
+# Mount volume for VM disk
 VOLUME /data
 
-# Start the VM with the start script
+# Start the system
 CMD ["/start.sh"]
