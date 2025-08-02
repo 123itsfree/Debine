@@ -85,6 +85,9 @@ done
 wait
 EOF
 
+# Fix line endings to UNIX style (important to avoid exec format error)
+RUN sed -i 's/\r$//' /start.sh
+
 RUN chmod +x /start.sh
 
 VOLUME /data
