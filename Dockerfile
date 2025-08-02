@@ -41,8 +41,9 @@ RUN curl -L https://github.com/novnc/noVNC/archive/refs/tags/v1.3.0.zip -o /tmp/
     mv /tmp/noVNC-1.3.0/* /novnc && \
     rm -rf /tmp/novnc.zip /tmp/noVNC-1.3.0
 
-# Add start script
-RUN echo '#!/bin/bash
+# Create start.sh script
+RUN cat <<'EOF' > /start.sh
+#!/bin/bash
 set -e
 
 DISK="/data/vm.raw"
@@ -53,7 +54,7 @@ PORT_VNC=6080
 USERNAME="root"
 PASSWORD="root"
 
-# Get public IP
+# Get public IP (fallback to localhost if failed)
 IP=$(curl -s https://api.ipify.org || echo "localhost")
 
 if [ ! -f "$DISK" ]; then
@@ -89,15 +90,16 @@ for i in {1..30}; do
   sleep 2
 done
 
-wait' > /start.sh
+wait
+EOF
 
 RUN chmod +x /start.sh
 
-# Expose ports
+# Expose ports for VNC and SSH forwarding
 EXPOSE 6080 2221
 
-# Mount volume for VM disk
+# Data volume for VM disk persistence
 VOLUME /data
 
-# Start the system
+# Start the VM with the start script
 CMD ["/start.sh"]
