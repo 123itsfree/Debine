@@ -9,6 +9,7 @@ PORT_SSH=2221
 PORT_VNC=6080
 USERNAME="root"
 PASSWORD="root"
+QEMU_PIDFILE="/var/run/qemu.pid"
 
 # Log function for better debugging
 log() {
@@ -63,6 +64,9 @@ if ! ps -p $WEBSOCKIFY_PID > /dev/null; then
     exit 1
 fi
 
+# Clean up previous PID file if exists
+[ -f "$QEMU_PIDFILE" ] && rm "$QEMU_PIDFILE"
+
 # Start QEMU in background
 log "Starting QEMU VM..."
 qemu-system-x86_64 \
@@ -74,12 +78,23 @@ qemu-system-x86_64 \
     -smbios type=1,serial=ds=nocloud \
     -netdev user,id=net0,hostfwd=tcp::${PORT_SSH}-:22 \
     -device virtio-net,netdev=net0 \
-    -vnc :0,password=on \
+    -vnc :0 \
     -daemonize \
+    -pidfile "$QEMU_PIDFILE" \
     -display none
 
-QEMU_PID=$!
-sleep 5  # Give QEMU more time to start
+# Verify QEMU started
+sleep 3
+if [ ! -f "$QEMU_PIDFILE" ]; then
+    log "Error: QEMU failed to start (no PID file)"
+    exit 1
+fi
+
+QEMU_PID=$(cat "$QEMU_PIDFILE")
+if ! ps -p "$QEMU_PID" > /dev/null; then
+    log "Error: QEMU process not running"
+    exit 1
+fi
 
 # Wait for SSH to be available
 log "Waiting for SSH on port $PORT_SSH..."
@@ -100,4 +115,4 @@ echo " 🧾 Login: ${USERNAME} / ${PASSWORD}"
 echo "================================================"
 
 # Keep container running
-tail -f /dev/null
+while true; do sleep 3600; done
