@@ -31,7 +31,7 @@ RUN curl -L https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-gene
 RUN echo "instance-id: debian-vm\nlocal-hostname: debian-vm" > /cloud-init/meta-data
 
 # Create cloud-init user-data
-RUN printf "#cloud-config\npreserve_hostname: false\nhostname: debian-vm\nusers:\n  - name: root\n    gecos: root\n    shell: /bin/bash\n    lock_passwd: false\n    passwd: \$6\$abcd1234\$W6wzBuvyE.D1mBGAgQw2uvUO/honRrnAGjFhMXSk0LUbZosYtoHy1tUtYhKlALqIldOGPrYnhSrOfAknpm91i0\n    sudo: ALL=(ALL) NOPASSWD:ALL\ndisable_root: false\nssh_pwauth: true\nchpasswd:\n  list: |\n    root:root\n  expire: false\nruncmd:\n  - systemctl enable ssh\n  - systemctl restart ssh\n" > /cloud-init/user-data
+RUN printf "#cloud-config\npreserve_hostname: false\nhostname: debian-vm\nusers:\n  - name: root\n    gecos: root\n    shell: /bin/bash\n    lock_passwd: false\n    passwd: \$6\$abcd1234\$W6wzBuvyE.D1mBGAgQw2uvUO/honRrnAGjFhMXSk0LUbZosYtoHy1tUtYhKlALqIldOGPrYnhSrOfAknpm91i0\n    sudo: ALL=(ALL) NOPASSWD:ALL\ndisable_root: false\nssh_pwauth: true\nchpasswd:\n  list: |\n    root:root\n  expire: false\nruncmd:\n  - systemctl enable ssh\n  - systemctl start ssh\n" > /cloud-init/user-data
 
 # Create cloud-init ISO
 RUN genisoimage -output /opt/qemu/seed.iso -volid cidata -joliet -rock /cloud-init/user-data /cloud-init/meta-data
@@ -55,18 +55,33 @@ PORT_VNC=6080
 USERNAME="root"
 PASSWORD="root"
 
-# Get public IP (fallback to localhost if failed)
-IP=$(curl -s https://api.ipify.org || echo "localhost")
-
-if [ ! -f "$DISK" ]; then
-    echo "Creating VM disk..."
-    qemu-img convert -f qcow2 -O raw "$IMG" "$DISK"
-    qemu-img resize "$DISK" 50G
+# Check if KVM is available
+if [ -e /dev/kvm ]; then
+    KVM="--enable-kvm -cpu host"
+else
+    echo "⚠️ KVM not available, falling back to software emulation"
+    KVM=""
 fi
 
+# Get public IP (fallback to localhost if failed)
+IP=$(curl -s --connect-timeout 5 https://api.ipify.org || echo "localhost")
+
+# Create VM disk if it doesn't exist
+if [ ! -f "$DISK" ]; then
+    echo "Creating VM disk..."
+    qemu-img convert -f qcow2 -O raw "$IMG" "$DISK" || { echo "Failed to convert disk image"; exit 1; }
+    qemu-img resize "$DISK" 50G || { echo "Failed to resize disk"; exit 1; }
+fi
+
+# Verify required files exist
+if [ ! -f "$IMG" ] || [ ! -f "$SEED" ]; then
+    echo "Error: Required files ($IMG or $SEED) are missing"
+    exit 1
+fi
+
+# Start QEMU
 qemu-system-x86_64 \
-    -enable-kvm \
-    -cpu host \
+    $KVM \
     -smp 2 \
     -m 6144 \
     -drive file="$DISK",format=raw,if=virtio \
@@ -75,9 +90,17 @@ qemu-system-x86_64 \
     -device virtio-net,netdev=net0 \
     -vga virtio \
     -display vnc=:0 \
-    -daemonize
+    -daemonize || { echo "Failed to start QEMU"; exit 1; }
 
+# Start noVNC
 websockify --web=/novnc ${PORT_VNC} localhost:5900 &
+
+# Wait for SSH to be available
+for i in {1..30}; do
+    nc -z localhost ${PORT_SSH} && echo "✅ VM is ready!" && break
+    echo "⏳ Waiting for SSH..."
+    sleep 2
+done
 
 echo "================================================"
 echo " 🖥️  VNC:  http://${IP}:${PORT_VNC}/vnc.html"
@@ -85,12 +108,7 @@ echo " 🔐 SSH:  ssh ${USERNAME}@${IP} -p ${PORT_SSH}"
 echo " 🧾 Login: ${USERNAME} / ${PASSWORD}"
 echo "================================================"
 
-for i in {1..30}; do
-  nc -z localhost ${PORT_SSH} && echo "✅ VM is ready!" && break
-  echo "⏳ Waiting for SSH..."
-  sleep 2
-done
-
+# Keep container running
 wait
 EOF
 
