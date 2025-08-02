@@ -74,10 +74,9 @@ qemu-system-x86_64 \
     -smbios type=1,serial=ds=nocloud \
     -netdev user,id=net0,hostfwd=tcp::${PORT_SSH}-:22 \
     -device virtio-net,netdev=net0 \
-    -serial mon:stdio \
-    -nographic \
     -vnc :0,password=on \
-    -daemonize
+    -daemonize \
+    -display none
 
 QEMU_PID=$!
 sleep 5  # Give QEMU more time to start
