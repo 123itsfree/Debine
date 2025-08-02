@@ -70,9 +70,11 @@ qemu-system-x86_64 \
     -smp 2 \
     -m 2048 \
     -drive file="$DISK",format=raw,if=virtio \
-    -drive file="$SEED",format=raw,if=virtio \
+    -cdrom "$SEED" \  # Changed from -drive to -cdrom for better cloud-init detection
+    -smbios type=1,serial=ds=nocloud \  # Force cloud-init detection
     -netdev user,id=net0,hostfwd=tcp::${PORT_SSH}-:22 \
     -device virtio-net,netdev=net0 \
+    -serial mon:stdio \  # Enable serial console for debugging
     -vga virtio \
     -display vnc=:0 &
 QEMU_PID=$!
@@ -84,12 +86,12 @@ fi
 
 # Wait for SSH to be available
 log "Waiting for SSH on port $PORT_SSH..."
-for i in {1..30}; do
+for i in {1..60}; do  # Increased timeout to 2 minutes
     if nc -z localhost $PORT_SSH; then
         log "✅ VM is ready!"
         break
     fi
-    log "⏳ Waiting for SSH..."
+    log "⏳ Waiting for SSH... (Attempt $i/60)"
     sleep 2
 done
 
