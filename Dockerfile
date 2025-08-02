@@ -36,7 +36,20 @@ RUN curl -L https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-gene
 RUN echo "instance-id: debian-vm\nlocal-hostname: debian-vm" > /cloud-init/meta-data
 
 # Create cloud-init user-data with root user and SSH enabled
-RUN printf "#cloud-config\npreserve_hostname: false\nhostname: debian-vm\nusers:\n  - name: root\n    gecos: root\n    shell: /bin/bash\n    lock_passwd: false\n    passwd: \$6\$abcd1234\$W6wzBuvyE.D1mBGAgQw2uvUO/honRrnAGjFhMXSk0LUbZosYtoHy1tUtYhKlALqIldOGPrYnhSrOfAknpm91i0\n    sudo: ALL=(ALL) NOPASSWD:ALL\ndisable_root: false\nssh_pwauth: true\nchpasswd:\n  list: |\n    root:root\n  expire: false\nruncmd:\n  - systemctl enable ssh\n  - systemctl start ssh\n" > /cloud-init/user-data
+RUN printf "#cloud-config\n\
+users:\n\
+  - name: root\n\
+    plain_text_passwd: root\n\
+    lock_passwd: false\n\
+    sudo: ALL=(ALL) NOPASSWD:ALL\n\
+chpasswd:\n\
+  expire: false\n\
+ssh_pwauth: true\n\
+runcmd:\n\
+  - sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config\n\
+  - sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config\n\
+  - systemctl restart ssh\n\
+  - echo 'SSH password authentication enabled' > /var/log/cloud-init-output.log\n" > /cloud-init/user-data
 
 # Create cloud-init ISO
 RUN genisoimage -output /opt/qemu/seed.iso -volid cidata -joliet -rock /cloud-init/user-data /cloud-init/meta-data
