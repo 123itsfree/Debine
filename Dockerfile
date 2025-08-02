@@ -42,47 +42,54 @@ RUN curl -L https://github.com/novnc/noVNC/archive/refs/tags/v1.3.0.zip -o /tmp/
     rm -rf /tmp/novnc.zip /tmp/noVNC-1.3.0
 
 # Add start script
-RUN echo '#!/bin/bash' > /start.sh && \
-    echo 'set -e' >> /start.sh && \
-    echo '' >> /start.sh && \
-    echo 'DISK="/data/vm.raw"' >> /start.sh && \
-    echo 'IMG="/opt/qemu/debian.img"' >> /start.sh && \
-    echo 'SEED="/opt/qemu/seed.iso"' >> /start.sh && \
-    echo '' >> /start.sh && \
-    echo 'if [ ! -f "$DISK" ]; then' >> /start.sh && \
-    echo '    echo "Creating VM disk..."' >> /start.sh && \
-    echo '    qemu-img convert -f qcow2 -O raw "$IMG" "$DISK"' >> /start.sh && \
-    echo '    qemu-img resize "$DISK" 50G' >> /start.sh && \
-    echo 'fi' >> /start.sh && \
-    echo '' >> /start.sh && \
-    echo 'qemu-system-x86_64 \\' >> /start.sh && \
-    echo '    -enable-kvm \\' >> /start.sh && \
-    echo '    -cpu host \\' >> /start.sh && \
-    echo '    -smp 2 \\' >> /start.sh && \
-    echo '    -m 6144 \\' >> /start.sh && \
-    echo '    -drive file="$DISK",format=raw,if=virtio \\' >> /start.sh && \
-    echo '    -drive file="$SEED",format=raw,if=virtio \\' >> /start.sh && \
-    echo '    -netdev user,id=net0,hostfwd=tcp::2221-:22 \\' >> /start.sh && \
-    echo '    -device virtio-net,netdev=net0 \\' >> /start.sh && \
-    echo '    -vga virtio \\' >> /start.sh && \
-    echo '    -display vnc=:0 \\' >> /start.sh && \
-    echo '    -daemonize' >> /start.sh && \
-    echo '' >> /start.sh && \
-    echo 'websockify --web=/novnc 6080 localhost:5900 &' >> /start.sh && \
-    echo '' >> /start.sh && \
-    echo 'echo "================================================"' >> /start.sh && \
-    echo 'echo " 🖥️  VNC: http://localhost:6080/vnc.html"' >> /start.sh && \
-    echo 'echo " 🔐 SSH: ssh root@localhost -p 2221"' >> /start.sh && \
-    echo 'echo " 🧾 Login: root / root"' >> /start.sh && \
-    echo 'echo "================================================"' >> /start.sh && \
-    echo '' >> /start.sh && \
-    echo 'for i in {1..30}; do' >> /start.sh && \
-    echo '  nc -z localhost 2221 && echo "✅ VM is ready!" && break' >> /start.sh && \
-    echo '  echo "⏳ Waiting for SSH..."' >> /start.sh && \
-    echo '  sleep 2' >> /start.sh && \
-    echo 'done' >> /start.sh && \
-    echo '' >> /start.sh && \
-    echo 'wait' >> /start.sh
+RUN echo '#!/bin/bash
+set -e
+
+DISK="/data/vm.raw"
+IMG="/opt/qemu/debian.img"
+SEED="/opt/qemu/seed.iso"
+PORT_SSH=2221
+PORT_VNC=6080
+USERNAME="root"
+PASSWORD="root"
+
+# Get public IP
+IP=$(curl -s https://api.ipify.org || echo "localhost")
+
+if [ ! -f "$DISK" ]; then
+    echo "Creating VM disk..."
+    qemu-img convert -f qcow2 -O raw "$IMG" "$DISK"
+    qemu-img resize "$DISK" 50G
+fi
+
+qemu-system-x86_64 \
+    -enable-kvm \
+    -cpu host \
+    -smp 2 \
+    -m 6144 \
+    -drive file="$DISK",format=raw,if=virtio \
+    -drive file="$SEED",format=raw,if=virtio \
+    -netdev user,id=net0,hostfwd=tcp::${PORT_SSH}-:22 \
+    -device virtio-net,netdev=net0 \
+    -vga virtio \
+    -display vnc=:0 \
+    -daemonize
+
+websockify --web=/novnc ${PORT_VNC} localhost:5900 &
+
+echo "================================================"
+echo " 🖥️  VNC:  http://${IP}:${PORT_VNC}/vnc.html"
+echo " 🔐 SSH:  ssh ${USERNAME}@${IP} -p ${PORT_SSH}"
+echo " 🧾 Login: ${USERNAME} / ${PASSWORD}"
+echo "================================================"
+
+for i in {1..30}; do
+  nc -z localhost ${PORT_SSH} && echo "✅ VM is ready!" && break
+  echo "⏳ Waiting for SSH..."
+  sleep 2
+done
+
+wait' > /start.sh
 
 RUN chmod +x /start.sh
 
@@ -92,5 +99,5 @@ EXPOSE 6080 2221
 # Mount volume for VM disk
 VOLUME /data
 
-# Entry point
-CMD ["bash", "/start.sh"]
+# Start the system
+CMD ["/start.sh"]
