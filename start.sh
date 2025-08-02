@@ -23,7 +23,7 @@ fi
 
 # Check if KVM is available
 if [ -e /dev/kvm ]; then
-    KVM="--enable-kvm -cpu host"
+    KVM="-enable-kvm -cpu host"
     log "Using KVM acceleration"
 else
     log "⚠️ KVM not available, falling back to software emulation"
@@ -70,23 +70,21 @@ qemu-system-x86_64 \
     -smp 2 \
     -m 2048 \
     -drive file="$DISK",format=raw,if=virtio \
-    -cdrom "$SEED" \  # Changed from -drive to -cdrom for better cloud-init detection
-    -smbios type=1,serial=ds=nocloud \  # Force cloud-init detection
+    -drive file="$SEED",format=raw,if=virtio,readonly=on \
+    -smbios type=1,serial=ds=nocloud \
     -netdev user,id=net0,hostfwd=tcp::${PORT_SSH}-:22 \
     -device virtio-net,netdev=net0 \
-    -serial mon:stdio \  # Enable serial console for debugging
-    -vga virtio \
-    -display vnc=:0 &
+    -serial mon:stdio \
+    -nographic \
+    -vnc :0,password=on \
+    -daemonize
+
 QEMU_PID=$!
-sleep 2
-if ! ps -p $QEMU_PID > /dev/null; then
-    log "Error: Failed to start QEMU"
-    exit 1
-fi
+sleep 5  # Give QEMU more time to start
 
 # Wait for SSH to be available
 log "Waiting for SSH on port $PORT_SSH..."
-for i in {1..60}; do  # Increased timeout to 2 minutes
+for i in {1..60}; do
     if nc -z localhost $PORT_SSH; then
         log "✅ VM is ready!"
         break
@@ -103,4 +101,4 @@ echo " 🧾 Login: ${USERNAME} / ${PASSWORD}"
 echo "================================================"
 
 # Keep container running
-wait
+tail -f /dev/null
