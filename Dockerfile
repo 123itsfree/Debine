@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     netcat-openbsd \
     sudo \
     bash \
+    dos2unix \
     && rm -rf /var/lib/apt/lists/*
 
 # Create required directories
@@ -41,7 +42,7 @@ RUN curl -L https://github.com/novnc/noVNC/archive/refs/tags/v1.3.0.zip -o /tmp/
     mv /tmp/noVNC-1.3.0/* /novnc && \
     rm -rf /tmp/novnc.zip /tmp/noVNC-1.3.0
 
-# Create start.sh script with correct UNIX line endings
+# Create start.sh script
 RUN cat <<'EOF' > /start.sh
 #!/bin/bash
 set -e
@@ -93,10 +94,8 @@ done
 wait
 EOF
 
-# Fix line endings forcibly to UNIX style (just in case)
-RUN sed -i 's/\r$//' /start.sh
-
-RUN chmod +x /start.sh
+# Ensure Unix line endings and make executable
+RUN dos2unix /start.sh && chmod +x /start.sh
 
 # Expose ports
 EXPOSE 6080 2221
