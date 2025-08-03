@@ -10,11 +10,16 @@ PORT_VNC=6080
 USERNAME="root"
 PASSWORD="root"
 QEMU_PIDFILE="/var/run/qemu.pid"
+LOG_FILE="/var/log/vm-startup.log"
 
 # Log function for better debugging
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a $LOG_FILE
 }
+
+# Initialize log file
+mkdir -p /var/log
+> $LOG_FILE
 
 # Check if required files exist
 if [ ! -f "$IMG" ] || [ ! -f "$SEED" ]; then
@@ -85,7 +90,7 @@ qemu-system-x86_64 \
     -daemonize \
     -pidfile "$QEMU_PIDFILE" \
     -display none \
-    -serial mon:stdio
+    -serial file:/var/log/qemu-serial.log
 
 # Verify QEMU started
 sleep 5  # Increased wait time for VM to boot
@@ -119,9 +124,9 @@ done
 
 # Print connection details
 echo "================================================"
-echo " 🖥️  VNC:  http://${IP}:${PORT_VNC}/vnc.html"
-echo " 🔐 SSH:  ssh ${USERNAME}@${IP} -p ${PORT_SSH}"
-echo " 🧾 Login: ${USERNAME} / ${PASSWORD}"
+echo " 🖥️  VNC:  http://${IP}:${PORT_VNC}/vnc.html" | tee -a $LOG_FILE
+echo " 🔐 SSH:  ssh ${USERNAME}@${IP} -p ${PORT_SSH}" | tee -a $LOG_FILE
+echo " 🧾 Login: ${USERNAME} / ${PASSWORD}" | tee -a $LOG_FILE
 echo "================================================"
 
 # Keep container running
