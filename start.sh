@@ -52,7 +52,10 @@ fi
 # Start SSH server in container
 log "Starting SSH server..."
 mkdir -p /var/run/sshd
-/usr/sbin/sshd || { log "Error: Failed to start SSH server"; exit 1; }
+/usr/sbin/sshd -o "PasswordAuthentication yes" -o "PermitRootLogin yes" || {
+    log "Error: Failed to start SSH server"
+    exit 1
+}
 
 # Start noVNC
 log "Starting noVNC on port $PORT_VNC..."
@@ -67,7 +70,7 @@ fi
 # Clean up previous PID file if exists
 [ -f "$QEMU_PIDFILE" ] && rm "$QEMU_PIDFILE"
 
-# Start QEMU in background
+# Start QEMU in background with proper networking
 log "Starting QEMU VM..."
 qemu-system-x86_64 \
     $KVM \
@@ -77,14 +80,15 @@ qemu-system-x86_64 \
     -drive file="$SEED",format=raw,if=virtio,readonly=on \
     -smbios type=1,serial=ds=nocloud \
     -netdev user,id=net0,hostfwd=tcp::${PORT_SSH}-:22 \
-    -device virtio-net,netdev=net0 \
+    -device virtio-net-pci,netdev=net0 \
     -vnc :0 \
     -daemonize \
     -pidfile "$QEMU_PIDFILE" \
-    -display none
+    -display none \
+    -serial mon:stdio
 
 # Verify QEMU started
-sleep 3
+sleep 5  # Increased wait time for VM to boot
 if [ ! -f "$QEMU_PIDFILE" ]; then
     log "Error: QEMU failed to start (no PID file)"
     exit 1
@@ -101,7 +105,13 @@ log "Waiting for SSH on port $PORT_SSH..."
 for i in {1..60}; do
     if nc -z localhost $PORT_SSH; then
         log "✅ VM is ready!"
-        break
+        # Verify SSH actually accepts connections
+        if sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no -p $PORT_SSH $USERNAME@localhost true; then
+            log "SSH authentication successful"
+            break
+        else
+            log "SSH port open but authentication failed"
+        fi
     fi
     log "⏳ Waiting for SSH... (Attempt $i/60)"
     sleep 2
@@ -115,4 +125,4 @@ echo " 🧾 Login: ${USERNAME} / ${PASSWORD}"
 echo "================================================"
 
 # Keep container running
-while true; do sleep 3600; done
+tail -f /dev/null
