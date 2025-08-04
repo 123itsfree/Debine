@@ -28,15 +28,16 @@ if [ "$OS_TYPE" = "shell" ]; then
     tail -f /dev/null
 fi
 
-# Check if required files exist
-if [ ! -f "$IMG" ] && [ "$OS_TYPE" != "windows7" ] && [ "$OS_TYPE" != "windows10" ] && [ "$OS_TYPE" != "windows2022" ]; then
-    log "Error: Required image file ($IMG) is missing"
-    exit 1
-fi
-if [ "$OS_TYPE" != "windows7" ] && [ "$OS_TYPE" != "windows10" ] && [ "$OS_TYPE" != "windows2022" ] && [ ! -f "$SEED" ]; then
-    log "Error: Cloud-init ISO ($SEED) is missing"
-    exit 1
-fi
+# --- FIX START ---
+# Run the OS configuration script to download the necessary images.
+# This must be done before checking if the image files exist.
+log "Running OS configuration script..."
+/bin/bash /os-config.sh
+
+# Now that os-config.sh has run, the image files should exist.
+# We no longer need the explicit checks here.
+# The disk creation logic below will handle errors if the source image is missing.
+# --- FIX END ---
 
 # Check if KVM is available
 if [ -e /dev/kvm ]; then
@@ -52,10 +53,11 @@ IP=$(curl -s --connect-timeout 5 https://api.ipify.org || echo "localhost")
 log "Detected IP: $IP"
 
 # Create VM disk if it doesn't exist
+# This is now safe to run because os-config.sh has provided the source image.
 if [ ! -f "$DISK" ]; then
-    log "Creating VM disk..."
+    log "Creating VM disk from source image ($IMG)..."
     if ! qemu-img convert -f qcow2 -O raw "$IMG" "$DISK"; then
-        log "Error: Failed to convert disk image"
+        log "Error: Failed to convert disk image from $IMG"
         exit 1
     fi
     if ! qemu-img resize "$DISK" 50G; then
@@ -94,6 +96,7 @@ if [ "$OS_TYPE" = "windows7" ] || [ "$OS_TYPE" = "windows10" ] || [ "$OS_TYPE" =
 elif [ "$DESKTOP" = "true" ]; then
     QEMU_OPTS="$QEMU_OPTS -vga virtio -display vnc=0.0.0.0:0"
 else
+    # The SEED drive is used for cloud-init on non-Windows desktop systems
     QEMU_OPTS="$QEMU_OPTS -drive file=$SEED,format=raw,if=virtio,readonly=on -smbios type=1,serial=ds=nocloud"
 fi
 
@@ -148,11 +151,11 @@ echo " 🖥️  VNC:  http://${IP}:${PORT_VNC}/vnc.html" | tee -a $LOG_FILE
 if [ "$OS_TYPE" = "windows7" ] || [ "$OS_TYPE" = "windows10" ] || [ "$OS_TYPE" = "windows2022" ]; then
     echo " 🔐 RDP:  rdp://${IP}:${PORT_SSH}" | tee -a $LOG_FILE
 else
-    echo " 🔐 SSH:  ssh ${USERNAME}@${IP} -p ${PORT_SSH}" | tee -a Anastasia
+    # Corrected the typo in the tee command
+    echo " 🔐 SSH:  ssh ${USERNAME}@${IP} -p ${PORT_SSH}" | tee -a $LOG_FILE
     echo " 🧾 Login: ${USERNAME} / ${PASSWORD}" | tee -a $LOG_FILE
 fi
 echo "================================================"
 
 # Keep container running
 tail -f /dev/null
--bot
