@@ -144,6 +144,7 @@ case "$OS_TYPE" in
             exit 1
         fi
         # No cloud-init for Windows
+        # We need to create dummy cloud-init files so genisoimage doesn't fail.
         touch /cloud-init/user-data /cloud-init/meta-data
         ;;
     redstar)
@@ -152,7 +153,8 @@ case "$OS_TYPE" in
             log "Error: Red Star OS image not found at /opt/qemu/redstar.img"
             exit 1
         fi
-        create_desktop_user_data "xfce4"
+        # No cloud-init for Red Star OS
+        touch /cloud-init/user-data /cloud-init/meta-data
         ;;
     shell)
         log "Shell mode selected. No VM will be started."
@@ -165,7 +167,7 @@ case "$OS_TYPE" in
 esac
 
 # Create cloud-init ISO for Linux-based OSes
-if [ "$OS_TYPE" != "windows7" ] && [ "$OS_TYPE" != "windows10" ] && [ "$OS_TYPE" != "windows2022" ] && [ "$OS_TYPE" != "shell" ]; then
+if [ "$OS_TYPE" != "windows7" ] && [ "$OS_TYPE" != "windows10" ] && [ "$OS_TYPE" != "windows2022" ] && [ "$OS_TYPE" != "redstar" ] && [ "$OS_TYPE" != "shell" ]; then
     genisoimage -output /opt/qemu/seed.iso -volid cidata -joliet -rock /cloud-init/user-data /cloud-init/meta-data
 fi
 
