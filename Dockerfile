@@ -36,8 +36,10 @@ COPY os-config.sh /os-config.sh
 
 # Ensure scripts have Unix line endings and are executable
 RUN dos2unix /start.sh /os-config.sh && \
-    chmod +x /start.sh /os-config.sh && \
-    /bin/bash -n /start.sh /os-config.sh
+    chmod +x /start.sh /os-config.sh
+    
+# NOTE: The following line is removed. We don't want to run the scripts during build time.
+# /bin/bash -n /start.sh /os-config.sh
 
 # Expose ports for noVNC (6080) and SSH (2221)
 EXPOSE 6080 2221
@@ -45,14 +47,15 @@ EXPOSE 6080 2221
 # Mount volume for VM disk
 VOLUME /data
 
-# Set environment variable for OS type (default to Debian 12)
+# Set environment variable for OS type (default to debian12)
 ARG OS_TYPE=debian12
 ENV OS_TYPE=${OS_TYPE}
 ENV DESKTOP=false
 ENV SHELL_MODE=false
 
-# Run os-config.sh to download and configure the OS image
-RUN /bin/bash /os-config.sh
+# NOTE: This is the second key change. We are removing this RUN command.
+# RUN /bin/bash /os-config.sh
 
-# Start the system with start.sh
+# Set the command to run when the container starts.
+# The start.sh script will be responsible for calling os-config.sh and then the VM.
 CMD ["/bin/bash", "/start.sh"]
