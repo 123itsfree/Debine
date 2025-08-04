@@ -3,7 +3,7 @@ set -e
 
 # Configuration variables
 DISK="/data/vm.raw"
-IMG="/opt/qemu/debian.img"
+IMG="/opt/qemu/${OS_TYPE}.img"
 SEED="/opt/qemu/seed.iso"
 PORT_SSH=2221
 PORT_VNC=6080
@@ -21,9 +21,20 @@ log() {
 mkdir -p /var/log
 > $LOG_FILE
 
+# Check if shell mode is enabled
+if [ "$OS_TYPE" = "shell" ]; then
+    log "Starting shell mode..."
+    echo "Container is running in shell mode. Use 'bash' to interact."
+    tail -f /dev/null
+fi
+
 # Check if required files exist
-if [ ! -f "$IMG" ] || [ ! -f "$SEED" ]; then
-    log "Error: Required files ($IMG or $SEED) are missing"
+if [ ! -f "$IMG" ] && [ "$OS_TYPE" != "windows7" ] && [ "$OS_TYPE" != "windows10" ] && [ "$OS_TYPE" != "windows2022" ]; then
+    log "Error: Required image file ($IMG) is missing"
+    exit 1
+fi
+if [ "$OS_TYPE" != "windows7" ] && [ "$OS_TYPE" != "windows10" ] && [ "$OS_TYPE" != "windows2022" ] && [ ! -f "$SEED" ]; then
+    log "Error: Cloud-init ISO ($SEED) is missing"
     exit 1
 fi
 
@@ -75,25 +86,23 @@ fi
 # Clean up previous PID file if exists
 [ -f "$QEMU_PIDFILE" ] && rm "$QEMU_PIDFILE"
 
-# Start QEMU in background with proper networking
-log "Starting QEMU VM..."
-qemu-system-x86_64 \
-    $KVM \
-    -smp 2 \
-    -m 2048 \
-    -drive file="$DISK",format=raw,if=virtio \
-    -drive file="$SEED",format=raw,if=virtio,readonly=on \
-    -smbios type=1,serial=ds=nocloud \
-    -netdev user,id=net0,hostfwd=tcp::${PORT_SSH}-:22 \
-    -device virtio-net-pci,netdev=net0 \
-    -vnc :0 \
-    -daemonize \
-    -pidfile "$QEMU_PIDFILE" \
-    -display none \
-    -serial file:/var/log/qemu-serial.log
+# QEMU configuration based on OS type
+QEMU_OPTS="$KVM -smp 2 -m 2048 -drive file=$DISK,format=raw,if=virtio -netdev user,id=net0,hostfwd=tcp::${PORT_SSH}-:22 -device virtio-net-pci,netdev=net0 -vnc :0 -daemonize -pidfile $QEMU_PIDFILE -display none -serial file:/var/log/qemu-serial.log"
+
+if [ "$OS_TYPE" = "windows7" ] || [ "$OS_TYPE" = "windows10" ] || [ "$OS_TYPE" = "windows2022" ]; then
+    QEMU_OPTS="$KVM -smp 2 -m 4096 -drive file=$DISK,format=raw,if=virtio -netdev user,id=net0,hostfwd=tcp::${PORT_SSH}-:3389 -device virtio-net-pci,netdev=net0 -vnc :0 -daemonize -pidfile $QEMU_PIDFILE -display none -serial file:/var/log/qemu-serial.log -cdrom /opt/qemu/virtio-win.iso"
+elif [ "$DESKTOP" = "true" ]; then
+    QEMU_OPTS="$QEMU_OPTS -vga virtio -display vnc=0.0.0.0:0"
+else
+    QEMU_OPTS="$QEMU_OPTS -drive file=$SEED,format=raw,if=virtio,readonly=on -smbios type=1,serial=ds=nocloud"
+fi
+
+# Start QEMU
+log "Starting QEMU VM for $OS_TYPE..."
+qemu-system-x86_64 $QEMU_OPTS
 
 # Verify QEMU started
-sleep 5  # Increased wait time for VM to boot
+sleep 5
 if [ ! -f "$QEMU_PIDFILE" ]; then
     log "Error: QEMU failed to start (no PID file)"
     exit 1
@@ -105,29 +114,45 @@ if ! ps -p "$QEMU_PID" > /dev/null; then
     exit 1
 fi
 
-# Wait for SSH to be available
-log "Waiting for SSH on port $PORT_SSH..."
-for i in {1..60}; do
-    if nc -z localhost $PORT_SSH; then
-        log "✅ VM is ready!"
-        # Verify SSH actually accepts connections
-        if sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no -p $PORT_SSH $USERNAME@localhost true; then
-            log "SSH authentication successful"
+# Wait for SSH (Linux) or RDP (Windows) to be available
+if [ "$OS_TYPE" = "windows7" ] || [ "$OS_TYPE" = "windows10" ] || [ "$OS_TYPE" = "windows2022" ]; then
+    log "Waiting for RDP on port $PORT_SSH..."
+    for i in {1..60}; do
+        if nc -z localhost $PORT_SSH; then
+            log "✅ VM is ready (RDP available)!"
             break
-        else
-            log "SSH port open but authentication failed"
         fi
-    fi
-    log "⏳ Waiting for SSH... (Attempt $i/60)"
-    sleep 2
-done
+        log "⏳ Waiting for RDP... (Attempt $i/60)"
+        sleep 2
+    done
+else
+    log "Waiting for SSH on port $PORT_SSH..."
+    for i in {1..60}; do
+        if nc -z localhost $PORT_SSH; then
+            log "✅ VM is ready!"
+            if sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no -p $PORT_SSH $USERNAME@localhost true; then
+                log "SSH authentication successful"
+                break
+            else
+                log "SSH port open but authentication failed"
+            fi
+        fi
+        log "⏳ Waiting for SSH... (Attempt $i/60)"
+        sleep 2
+    done
+fi
 
 # Print connection details
 echo "================================================"
 echo " 🖥️  VNC:  http://${IP}:${PORT_VNC}/vnc.html" | tee -a $LOG_FILE
-echo " 🔐 SSH:  ssh ${USERNAME}@${IP} -p ${PORT_SSH}" | tee -a $LOG_FILE
-echo " 🧾 Login: ${USERNAME} / ${PASSWORD}" | tee -a $LOG_FILE
+if [ "$OS_TYPE" = "windows7" ] || [ "$OS_TYPE" = "windows10" ] || [ "$OS_TYPE" = "windows2022" ]; then
+    echo " 🔐 RDP:  rdp://${IP}:${PORT_SSH}" | tee -a $LOG_FILE
+else
+    echo " 🔐 SSH:  ssh ${USERNAME}@${IP} -p ${PORT_SSH}" | tee -a Anastasia
+    echo " 🧾 Login: ${USERNAME} / ${PASSWORD}" | tee -a $LOG_FILE
+fi
 echo "================================================"
 
 # Keep container running
 tail -f /dev/null
+-bot
